@@ -6,14 +6,14 @@ var proto = exports.protocol = {
     server : require('./lib/server/proto'),
 };
 
-exports.createServer = function (domain, cb) {
+exports.createServer = function (domain, cb, options) {
     if (typeof domain === 'function') {
         cb = domain;
         domain = undefined;
     }
     
     return net.createServer(function (stream) {
-        cb(proto.client(domain, stream));
+        cb(proto.client(domain, stream, options));
     });
 };
 
@@ -78,3 +78,44 @@ exports.connect = function () {
     
     return stream;
 };
+
+var logger = {
+    debug: console.log,
+    info: console.info,
+    warn: console.warn,
+    error: console.error
+  };
+
+exports.connectMx = function(domain, callback) {
+    require('dns').resolveMx(domain, function(err, data) {
+        if (err)
+          return callback(err);
+
+        data.sort(function(a, b) {return a.priority < b. priority});
+        logger.debug('mx resolved: ', data);
+
+        if (!data || data.length == 0)
+          return callback(new Error('can not resolve Mx of <' + domain + '>'));
+
+        function tryConnect(i) {
+
+          if (i >= data.length) return callback(new Error('can not connect to any SMTP server'));
+
+          var sock = net.createConnection(25, data[i].exchange);
+
+          sock.on('error', function(err) {
+              logger.error('Error on connectMx for: ', data[i], err);
+              tryConnect(++i);
+          });
+
+          sock.on('connect', function() {
+              logger.debug("MX connection created: ", data[i].exchange);
+              sock.removeAllListeners('error');
+              callback(null, sock);
+          });
+
+        };
+
+        tryConnect(0);
+    });
+  }
